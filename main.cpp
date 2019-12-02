@@ -24,7 +24,7 @@ fstream resultFile;
 */
 int main(int argc, char *argv[]){
 
-  ExtendibleHashing ex1("ex1","data1",32);
+  ExtendibleHashing ex1("ex1","data1",32*sizeof(Bucket));
   DataItem item;
   item.data=12;
   item.key=2369;
@@ -32,17 +32,27 @@ int main(int argc, char *argv[]){
   ex1.insertItem(item);
   item.key=3760;
   ex1.insertItem(item);
+  ex1.DisplayFile();
+  
   item.key=4692;
   ex1.insertItem(item);
   item.key=4871;
   ex1.insertItem(item);
+  ex1.DisplayFile();
+
   item.key=5659;
   ex1.insertItem(item);
+  ex1.DisplayFile();
+
   item.key=1821;
   ex1.insertItem(item);
+  ex1.DisplayFile();
+  
   item.key=1074;
   ex1.insertItem(item);
-  item.key=7115;
+  ex1.DisplayFile();
+  
+  /*item.key=7115;
   ex1.insertItem(item);
   item.key=1620;
   ex1.insertItem(item);
@@ -63,7 +73,7 @@ int main(int argc, char *argv[]){
 
 
   ex1.DisplayFile();
-  /*//1. Create Database file or Open it if it already exists, check readfile.cpp
+  //1. Create Database file or Open it if it already exists, check readfile.cpp
    char* dbPath = "db/extendibleHashing";
    if (argc >= 3) {
      dbPath = argv[1];

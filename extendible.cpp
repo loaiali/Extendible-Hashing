@@ -34,12 +34,17 @@ int ExtendibleHashing::writeDirectoryOffset(int offset, int value){
 void ExtendibleHashing::redistribute(Bucket &original, Bucket &newBucket, int localDepth){
 	//for every record in the original bucket we will check whether it will stay in the same bucket or not
 	for(int i=0;i<RECORDSPERBUCKET;i++){
-		int index=hashCode(original.dataItem[i].key,directory.globalDepth);
-		if(extractNbits(index,localDepth,pow(2,localDepth))%2==1){
+		int hash=original.dataItem[i].key%32;
+		int index=extractNbits(hash,localDepth,5-localDepth+1);
+		cout<<"key:"<<original.dataItem[i].key<<" will be at index "<<index<<endl;
+		if(index%2==1){
 			original.dataItem[i].valid=0;
 			newBucket.dataItem[i].valid=1;
 			newBucket.dataItem[i].key=original.dataItem[i].key;
 			newBucket.dataItem[i].data=original.dataItem[i].data;
+		}
+		else{
+			newBucket.dataItem[i].valid=0;
 		}
 	}
 	//pwrite(BucketsFHandler,&original,sizeof(Bucket),originalOffset);
@@ -47,12 +52,11 @@ void ExtendibleHashing::redistribute(Bucket &original, Bucket &newBucket, int lo
 	return;
 }
 int ExtendibleHashing:: extractNbits(int number,int k,int p){
-	cout<<endl<<"anding "<<((1 << k) - 1)<<" with "<<(number>>(p-1));
 	return (((1 << k) - 1) &(number>>(p-1)));
 }
 
 void ExtendibleHashing::updateBucket(int offset, Bucket newValue){
-	pwrite(BucketsFHandler,&newValue,sizeof(Bucket),offset*sizeof(Bucket));
+	pwrite(BucketsFHandler,&newValue,sizeof(Bucket),offset);
 
 }
 
@@ -74,13 +78,10 @@ int ExtendibleHashing::appendBucket(Bucket bucket){
 	for(int i=0;i<32;i++){
 		Bucket temp;
 		pread(BucketsFHandler,&temp,sizeof(Bucket),i*sizeof(Bucket));
-		//cout<<"reading Bucket number "<<i<<" at offset "<<i*sizeof(Bucket)<<endl;
 		for (int j=0;j<RECORDSPERBUCKET;j++){
-			//cout<<"record number "<<j<<" valid attribute is: "<<temp.dataItem[j].valid<<"and key "<<temp.dataItem[j].key<<endl;
 			if(temp.dataItem[j].valid==0){
 			//found an empty bucket
 			//pwrite(BucketsFHandler,&bucket,sizeof(Bucket),i*sizeof(Bucket));
-			cout<<"bucket will be added at address "<<i*sizeof(Bucket);
 			return i*sizeof(Bucket);
 			}
 
@@ -102,14 +103,21 @@ void ExtendibleHashing::writeWholeDirector(Directory d){
 	return;
 }
 void ExtendibleHashing:: updateDirectoryPointers(int hashIndex, int bucketOffset,int localDepth, int insertedBucketOffset){
-	int startingIndex;
+	int startingIndex=-1;
+	int finalIndex;
 	for(int i=0;i<pow(2,directory.globalDepth);i++ ){
-		if(directory.bucketsOffsets[i]==bucketOffset){
+		if(directory.bucketsOffsets[i]==bucketOffset &&startingIndex==-1){
 			startingIndex=i;
-			break;
 		}
+		else if(directory.bucketsOffsets[i]==bucketOffset){
+			finalIndex=i;
+		}
+
 	}
-	for(int i=startingIndex+(pow(2,localDepth)/2);i<pow(2,localDepth);i++){
+	cout<<startingIndex<<endl;
+	cout<<"error is hereeeeeeeeeeeeeeeeeeeee   "<<(startingIndex+(pow(2,localDepth)/2))<<"      "<<pow(2,localDepth)<<endl;
+	for(int i=(startingIndex+(pow(2, directory.globalDepth-localDepth+1)/2));i<startingIndex+(pow(2,directory.globalDepth-localDepth+1));i++){
+		cout<<"changing at index zzzzzzzzzzzzzzzzz:"<<i<<endl;
 		directory.bucketsOffsets[i]=insertedBucketOffset;
 	}
 }
@@ -229,8 +237,6 @@ void ExtendibleHashing::splitDirectory(){
 	}
 	newD.bucketsOffsets = newBuckets;
 	writeWholeDirector(newD);*/
-	directory.globalDepth++;
-	directory.bucketsOffsets.resize(pow(2,directory.globalDepth));
 	vector<int> newDirectory;
 
 	for (int i=0;i<directory.bucketsOffsets.size();i++){
@@ -238,12 +244,12 @@ void ExtendibleHashing::splitDirectory(){
 		newDirectory.push_back(directory.bucketsOffsets[i]);
 	}
 	directory.bucketsOffsets=newDirectory;
+	directory.globalDepth++;
 }
 
 //returns 1 on success,-1 on failure
 int ExtendibleHashing::insertItem(DataItem item)
 {
-	cout<<"directory.globalDepth "<<directory.globalDepth<<"directory.bucketsOffsets.size() "<<directory.bucketsOffsets.size();
 	//in this case we don't have a directory so we need to create it
 	if (directory.globalDepth == 0 && directory.bucketsOffsets.size() == 0){		
 		Directory newD;
@@ -260,14 +266,12 @@ int ExtendibleHashing::insertItem(DataItem item)
 	else {
 		// there is a dictionary with globalDepth gd
 		int hashIndex = hashCode(item.key, directory.globalDepth);
-		cout<<" Inserting item with key "<<item.key<<" In index "<<hashIndex<<endl;
+		cout<<"Inserting item with key "<<item.key<<" In index "<<hashIndex<<endl;
 		int bucketOffset = directory.bucketsOffsets[hashIndex];
-		cout<<"bucketOffset "<<bucketOffset<<endl;
 		Bucket targetBucket = readFromBuckets(bucketOffset);
 		// loop through bucket records and find available space in this bucket
 		for (int i = 0; i < RECORDSPERBUCKET; i++){
 			if (!targetBucket.dataItem[i].valid){
-				cout<<"at iteration "<<i<<"inserted item with key "<<item.key<<endl;
 				// empty record, insert the item here
 				targetBucket.dataItem[i] = item;
 				updateBucket(bucketOffset, targetBucket); // update the dataitems
@@ -276,31 +280,50 @@ int ExtendibleHashing::insertItem(DataItem item)
 		}
 		// the bucket is full, we need to split the bucket, and update directory if needed
 		// split the bucket into two buckets and try inserting the item again
-		cout<<"Bucket was full !!"<<endl;
 		Bucket newBucket;
 		targetBucket.localDepth += 1;
 		newBucket.localDepth = targetBucket.localDepth;
 		int insertedBucketOffset = appendBucket(newBucket);
-		
 		if(insertedBucketOffset==-1){
 			perror("File is full");
 			return -1;
 		}
-
+		cout<<"This item will be inserted at "<<insertedBucketOffset<<endl;
 		redistribute(targetBucket, newBucket, targetBucket.localDepth); // redistribute data among two buckets
+		cout<<"****************************"<<endl;
+		printBucket(targetBucket);
+		printBucket(newBucket);
+		cout<<"******************************"<<endl;
 		
 		updateBucket(bucketOffset, targetBucket); // update local depth and may be the records also after redistribution
-
-
+		updateBucket(insertedBucketOffset,newBucket);
 		if (targetBucket.localDepth > directory.globalDepth) splitDirectory();
-		// here is we split the bucket but the directory have enough bits, so we need to update the second pointer (that end with 1) point to the new one
+		cout<<"================================="<<endl;
+		DisplayFile();
+		cout<<"===================================="<<endl;
+		
 		updateDirectoryPointers(hashIndex, bucketOffset, targetBucket.localDepth, insertedBucketOffset);
 		// int secondPointerOffset = hashIndex;
 		// if (hashIndex % 2 == 0) secondPointerOffset += 1;
 		// directory.bucketsOffsets[hashIndex]
 		// writeDirectoryOffset(secondPointerOffset, insertedBucketOffset);
+		cout<<"++++++++++++++++++++++++++++++++"<<endl;
+		DisplayFile();
+		cout<<"-----------------------"<<endl;
+		//insertItem(item); // try to insert again, it will be inserted or it will be splitted again
 		
-		insertItem(item); // try to insert again, it will be inserted or it will be splitted again
+		//new hash index
+		hashIndex=hashCode(item.key, directory.globalDepth);
+		for(int i=0;i<RECORDSPERBUCKET;i++){
+			if(newBucket.dataItem[i].valid==0){
+				newBucket.dataItem[i].valid=1;
+				newBucket.dataItem[i].data=item.data;
+				newBucket.dataItem[i].key=item.key;
+				break;
+			}
+		}
+		updateBucket(insertedBucketOffset,newBucket);
+		directory.bucketsOffsets[hashIndex]=insertedBucketOffset;
 		return 1;
 	}
 }
@@ -311,16 +334,14 @@ int ExtendibleHashing::searchItem(struct DataItem *item, int *count)
 
 int ExtendibleHashing::DisplayFile()
 {
-	Directory d =  readWholeDirectory();
-	int gd = d.globalDepth;
-	int numPointers = pow(2, gd);
-	cout << endl<<"global depth = " << gd << " with " << numPointers << " buckets" << endl;
+	int numPointers = pow(2, directory.globalDepth);
+	cout <<"global depth = " << directory.globalDepth << " with " << numPointers << " buckets" << endl;
 	for(int i = 0; i < numPointers; i++){
-		Bucket currentBucket = readFromBuckets(d.bucketsOffsets[i]);
+		Bucket currentBucket = readFromBuckets(directory.bucketsOffsets[i]);
 		for (int j = 0; j < RECORDSPERBUCKET; j++){
 			DataItem currentItem = currentBucket.dataItem[j];
-			if (currentItem.valid) 
-			cout << "bucket["<<i<<"] :"<<"(" << currentItem.key << ", " <<  currentItem.data << ")" << endl;
+			//if (currentItem.valid) 
+			cout << "bucket["<<i<<"] :"<<"(" << currentItem.key << ", " <<  currentItem.data << ", "<<currentItem.valid<<")" << endl;
 		}
 		cout << endl;
 	}
@@ -351,4 +372,9 @@ int ExtendibleHashing::deleteKey(int key)
 
 	}*/
 	return -1;
+}
+void ExtendibleHashing:: printBucket(Bucket bucket){
+	for(int i=0;i<RECORDSPERBUCKET;i++){
+		cout<<"key:"<<bucket.dataItem[i].key<<" data:"<<bucket.dataItem[i].data<<" valid: "<<bucket.dataItem[i].valid<<endl;
+	}
 }

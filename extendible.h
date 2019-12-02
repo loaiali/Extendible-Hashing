@@ -55,5 +55,5 @@ private:
    int writeDirectoryOffset(int offset, int value);
    void updateDirectoryPointers(int hashIndex, int bucketOffset,int localDepth, int insertedBucketOffset);
    int extractNbits(int key,int depth,int p);
-
+   void printBucket(Bucket bucket);
 };
