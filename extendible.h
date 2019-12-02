@@ -1,6 +1,8 @@
 #pragma once
 #include <vector>
 #include <string>
+#include<iostream>
+
 using namespace std;
 #define RECORDSPERBUCKET 2 //No. of records inside each Bucket
 
@@ -33,7 +35,7 @@ public:
 
    int insertItem(DataItem item);
    int searchItem(struct DataItem *item, int *count);
-   int DisplayFile();
+   int DisplayFile(std::ostream &out = std::cout);
    int deleteOffset(int Offset);
    int deleteKey(int key);
 
@@ -45,7 +47,7 @@ private:
    void writeWholeDirector(Directory d);
    int hashCode(int key, int globalDepth);
    Directory readWholeDirectory();
-   void splitDirectory();
+   void splitDirectory(int splitIndex, int insertedBucketPointer);
    int readGlobalDepth();
    int appendBucket(Bucket bucket);
    int readFromDirectory(int pointerOffset); // get the pointer value at pointerOffset in the directory file
