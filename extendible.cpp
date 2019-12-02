@@ -5,11 +5,10 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include<cmath>
-// #include <unistd.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include<vector>
-#include"readfile.h"
 using namespace std;
 
 //const int BUCKETSIZE = sizeof(Bucket);
@@ -56,8 +55,8 @@ int ExtendibleHashing:: extractNbits(int number,int k,int p){
 }
 
 void ExtendibleHashing::updateBucket(int offset, Bucket newValue){
-	pwrite(BucketsFHandler,&newValue,sizeof(Bucket),offset);
-
+	int result = pwrite(BucketsFHandler, &newValue, sizeof(Bucket), offset);
+	cout << "AMMMMMMAMR: " << result << endl;
 }
 
 Bucket ExtendibleHashing::readFromBuckets(int offset){
@@ -71,6 +70,13 @@ int ExtendibleHashing::readFromDirectory(int pointerOffset){
 
 }
 
+bool haveValidRecord(Bucket b){
+	for (int i = 0; i < RECORDSPERBUCKET; i++){
+		if(b.dataItem[i].valid) return true;
+	}
+	return false;
+}
+
 int ExtendibleHashing::appendBucket(Bucket bucket){
 	//returns -1 on failure
 	//returns bucket address on success
@@ -78,14 +84,9 @@ int ExtendibleHashing::appendBucket(Bucket bucket){
 	for(int i=0;i<32;i++){
 		Bucket temp;
 		pread(BucketsFHandler,&temp,sizeof(Bucket),i*sizeof(Bucket));
-		for (int j=0;j<RECORDSPERBUCKET;j++){
-			if(temp.dataItem[j].valid==0){
-			//found an empty bucket
-			//pwrite(BucketsFHandler,&bucket,sizeof(Bucket),i*sizeof(Bucket));
-			return i*sizeof(Bucket);
-			}
-
-		}
+		
+		if(haveValidRecord(temp)) continue;
+		return i*sizeof(Bucket);
 	}
 	return -1;
 }
@@ -116,9 +117,14 @@ void ExtendibleHashing:: updateDirectoryPointers(int hashIndex, int bucketOffset
 	}
 	cout<<startingIndex<<endl;
 	cout<<"error is hereeeeeeeeeeeeeeeeeeeee   "<<(startingIndex+(pow(2,localDepth)/2))<<"      "<<pow(2,localDepth)<<endl;
-	for(int i=(startingIndex+(pow(2, directory.globalDepth-localDepth+1)/2));i<startingIndex+(pow(2,directory.globalDepth-localDepth+1));i++){
-		cout<<"changing at index zzzzzzzzzzzzzzzzz:"<<i<<endl;
-		directory.bucketsOffsets[i]=insertedBucketOffset;
+	int start = startingIndex + (pow(2, directory.globalDepth - localDepth + 1) / 2);
+	cout << start << endl;
+	int end = start + (pow(2, directory.globalDepth - localDepth + 1) / 2);
+	cout << end << endl;
+	for (int i = start; i < start + (pow(2, directory.globalDepth - localDepth + 1) / 2); i++)
+	{
+		cout << "changing at index zzzzzzzzzzzzzzzzz:" << i << endl;
+		directory.bucketsOffsets[i] = insertedBucketOffset;
 	}
 }
 
@@ -224,7 +230,7 @@ int ExtendibleHashing::hashCode(int key, int globalDepth)
 }
 
 
-void ExtendibleHashing::splitDirectory(){
+void ExtendibleHashing::splitDirectory(int splitIndex, int newPointer){
 	//Directory currentD = readWholeDirectory();
 	/*Directory newD;
 	newD.globalDepth = currentD.globalDepth += 1;
@@ -237,13 +243,20 @@ void ExtendibleHashing::splitDirectory(){
 	}
 	newD.bucketsOffsets = newBuckets;
 	writeWholeDirector(newD);*/
+	cout << "********************************** splitDirectory: newBucket data ***********************\n";
+	printBucket(readFromBuckets(newPointer));
+	cout << "********************************** splitDirectory: newBucket data ***********************\n";
 	vector<int> newDirectory;
-
 	for (int i=0;i<directory.bucketsOffsets.size();i++){
 		newDirectory.push_back(directory.bucketsOffsets[i]);
-		newDirectory.push_back(directory.bucketsOffsets[i]);
+		if (i == splitIndex){
+			newDirectory.push_back(newPointer);
+			cout << "***** I pushed the new pointer ***\n";
+		}
+		else
+			newDirectory.push_back(directory.bucketsOffsets[i]);
 	}
-	directory.bucketsOffsets=newDirectory;
+	directory.bucketsOffsets = newDirectory;
 	directory.globalDepth++;
 }
 
@@ -292,17 +305,14 @@ int ExtendibleHashing::insertItem(DataItem item)
 		redistribute(targetBucket, newBucket, targetBucket.localDepth); // redistribute data among two buckets
 		cout<<"****************************"<<endl;
 		printBucket(targetBucket);
+		cout << "---\n";
 		printBucket(newBucket);
 		cout<<"******************************"<<endl;
 		
 		updateBucket(bucketOffset, targetBucket); // update local depth and may be the records also after redistribution
 		updateBucket(insertedBucketOffset,newBucket);
-		if (targetBucket.localDepth > directory.globalDepth) splitDirectory();
-		cout<<"================================="<<endl;
-		DisplayFile();
-		cout<<"===================================="<<endl;
-		
-		updateDirectoryPointers(hashIndex, bucketOffset, targetBucket.localDepth, insertedBucketOffset);
+		if (targetBucket.localDepth > directory.globalDepth) splitDirectory(hashIndex, insertedBucketOffset);
+		else updateDirectoryPointers(hashIndex, bucketOffset, targetBucket.localDepth, insertedBucketOffset);
 		// int secondPointerOffset = hashIndex;
 		// if (hashIndex % 2 == 0) secondPointerOffset += 1;
 		// directory.bucketsOffsets[hashIndex]
@@ -310,21 +320,21 @@ int ExtendibleHashing::insertItem(DataItem item)
 		cout<<"++++++++++++++++++++++++++++++++"<<endl;
 		DisplayFile();
 		cout<<"-----------------------"<<endl;
-		//insertItem(item); // try to insert again, it will be inserted or it will be splitted again
+		return insertItem(item); // try to insert again, it will be inserted or it will be splitted again
 		
-		//new hash index
-		hashIndex=hashCode(item.key, directory.globalDepth);
-		for(int i=0;i<RECORDSPERBUCKET;i++){
-			if(newBucket.dataItem[i].valid==0){
-				newBucket.dataItem[i].valid=1;
-				newBucket.dataItem[i].data=item.data;
-				newBucket.dataItem[i].key=item.key;
-				break;
-			}
-		}
-		updateBucket(insertedBucketOffset,newBucket);
-		directory.bucketsOffsets[hashIndex]=insertedBucketOffset;
-		return 1;
+		// //new hash index
+		// hashIndex=hashCode(item.key, directory.globalDepth);
+		// for(int i=0;i<RECORDSPERBUCKET;i++){
+		// 	if(newBucket.dataItem[i].valid==0){
+		// 		newBucket.dataItem[i].valid=1;
+		// 		newBucket.dataItem[i].data=item.data;
+		// 		newBucket.dataItem[i].key=item.key;
+		// 		break;
+		// 	}
+		// }
+		// updateBucket(insertedBucketOffset,newBucket);
+		// directory.bucketsOffsets[hashIndex]=insertedBucketOffset;
+		// return 1;
 	}
 }
 
@@ -332,18 +342,18 @@ int ExtendibleHashing::searchItem(struct DataItem *item, int *count)
 {
 }
 
-int ExtendibleHashing::DisplayFile()
+int ExtendibleHashing::DisplayFile(ostream &out)
 {
 	int numPointers = pow(2, directory.globalDepth);
-	cout <<"global depth = " << directory.globalDepth << " with " << numPointers << " buckets" << endl;
+	out <<"global depth = " << directory.globalDepth << " with " << numPointers << " buckets" << endl;
 	for(int i = 0; i < numPointers; i++){
 		Bucket currentBucket = readFromBuckets(directory.bucketsOffsets[i]);
 		for (int j = 0; j < RECORDSPERBUCKET; j++){
 			DataItem currentItem = currentBucket.dataItem[j];
 			//if (currentItem.valid) 
-			cout << "bucket["<<i<<"] :"<<"(" << currentItem.key << ", " <<  currentItem.data << ", "<<currentItem.valid<<")" << endl;
+			out << "bucket["<<i<<"]: "<<"(" << currentItem.key << ", " <<  currentItem.data << ", "<<currentItem.valid<<")" << endl;
 		}
-		cout << endl;
+		out << endl;
 	}
 }
 
